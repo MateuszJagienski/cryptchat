@@ -1,4 +1,4 @@
-package org.example;
+package org.example.models;
 
 
 import java.sql.Timestamp;
@@ -7,6 +7,7 @@ public class Message {
     private String authorName;
     private String text;
     private byte[] encryptedText;
+    private byte[] messageSignature;
     private Timestamp timestamp;
 
     public Message(String authorName, String text, Timestamp timestamp) {
@@ -45,5 +46,13 @@ public class Message {
 
     public void setTimestamp(Timestamp timestamp) {
         this.timestamp = timestamp;
+    }
+
+    public byte[] getMessageSignature() {
+        return messageSignature;
+    }
+
+    public void setMessageSignature(byte[] messageSignature) {
+        this.messageSignature = messageSignature;
     }
 }

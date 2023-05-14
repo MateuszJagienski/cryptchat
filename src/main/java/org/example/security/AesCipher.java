@@ -1,5 +1,8 @@
-package org.example;
+package org.example.security;
 
+
+import org.example.utils.BytesToStringConverter;
+import org.example.utils.HashGenerator;
 
 import javax.crypto.*;
 import javax.crypto.spec.GCMParameterSpec;
@@ -11,7 +14,7 @@ import java.security.*;
 import java.util.Arrays;
 import java.util.Base64;
 
-public class CryptoHandler {
+public class AesCipher {
 
     private static final SecureRandom secureRandom = new SecureRandom();
     private static final int IV_SIZE = 128;
@@ -27,7 +30,6 @@ public class CryptoHandler {
     }
     // required 128-bit AES key
     public static String encrypt(String plainText, SecretKey secretKey) throws InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchAlgorithmException, UnsupportedEncodingException, InvalidAlgorithmParameterException, NoSuchPaddingException {
-
         byte[] data = plainText.getBytes(StandardCharsets.UTF_8);
 
         // initiliaze random IV

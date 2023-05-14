@@ -1,6 +1,7 @@
-package org.example;
+package org.example.security;
 
 import javax.crypto.KeyAgreement;
+import javax.crypto.SecretKey;
 import java.security.*;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
@@ -19,7 +20,7 @@ public class DiffieHellman {
         KeyFactory keyFactory = KeyFactory.getInstance(ALGORITHM);
         X509EncodedKeySpec x509EncodedKeySpec = new X509EncodedKeySpec(remotePublicKey);
         PublicKey publicKey = keyFactory.generatePublic(x509EncodedKeySpec);
-        keyAgreement.doPhase(publicKey, lastPhase);
-        return lastPhase ? keyAgreement.generateSecret() : null;
+        var key = keyAgreement.doPhase(publicKey, lastPhase);
+        return lastPhase ? keyAgreement.generateSecret() : key.getEncoded();
     }
 }

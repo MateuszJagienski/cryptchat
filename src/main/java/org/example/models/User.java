@@ -1,5 +1,8 @@
-package org.example;
+package org.example.models;
 
+import org.example.security.DiffieHellman;
+
+import javax.crypto.SecretKey;
 import java.security.KeyPair;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -12,9 +15,28 @@ public class User {
 
     private byte[] sharedSecret;
 
+    private SecretKey secretAesKey;
+    private DiffieHellman diffieHellman;
+
+    public DiffieHellman getDiffieHellman() {
+        return diffieHellman;
+    }
+
+    public void setDiffieHellman(DiffieHellman diffieHellman) {
+        this.diffieHellman = diffieHellman;
+    }
+
     public User(String name, KeyPair keyPairRsa) {
         this.name = name;
         this.keyPairRsa = keyPairRsa;
+    }
+
+    public SecretKey getSecretAesKey() {
+        return secretAesKey;
+    }
+
+    public void setSecretAesKey(SecretKey secretAesKey) {
+        this.secretAesKey = secretAesKey;
     }
 
     public KeyPair getKeyPairDh() {
