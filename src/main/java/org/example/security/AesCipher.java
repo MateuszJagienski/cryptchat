@@ -40,13 +40,11 @@ public class AesCipher {
         byte[] aadTagData = TAG_DATA.getBytes(StandardCharsets.UTF_8);
         GCMParameterSpec gcmParameterSpec = new GCMParameterSpec(GCM_TAG_LENGTH, IV);
 
-        // generate secret key
-        if (secretKey == null) {
-            secretKey = generateSecretKey();
-        }
+
 
 
         // initialize cipher
+        System.out.println("secretKey: " + BytesToStringConverter.bytesToHex(secretKey.getEncoded()));
         Cipher encCipher = Cipher.getInstance("AES/GCM/NOPADDING");
         encCipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmParameterSpec, secureRandom);
         encCipher.updateAAD(aadTagData);
@@ -76,8 +74,6 @@ public class AesCipher {
         // encrypted bytes without additional data
         byte[] encryptedBytes = new byte[decodedToDecrypt.length - IV.length];
         System.arraycopy(decodedToDecrypt, IV.length, encryptedBytes, 0, encryptedBytes.length);
-        if (secretKey == null)
-            secretKey = generateSecretKey();
 
         Cipher decCipher = Cipher.getInstance("AES/GCM/NOPADDING");
         decCipher.init(Cipher.DECRYPT_MODE, secretKey, gcmParameterSpec, secureRandom);

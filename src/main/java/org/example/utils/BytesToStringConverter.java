@@ -3,12 +3,17 @@ package org.example.utils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Base64;
 
 public final class BytesToStringConverter {
     private static final byte[] HEX_ARRAY = "0123456789ABCDEF".getBytes(StandardCharsets.US_ASCII);
 
     public static String bytesToString(byte[] input) {
         return new String(input, StandardCharsets.UTF_8);
+    }
+
+    public static String bytesToStringBase64(byte[] input) {
+        return Base64.getEncoder().encodeToString(input);
     }
 
     public static byte[] stringToBytes(String input) {

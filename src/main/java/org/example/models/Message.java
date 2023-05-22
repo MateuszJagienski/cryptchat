@@ -3,17 +3,43 @@ package org.example.models;
 
 import java.sql.Timestamp;
 
-public class Message {
+public class Message{
     private String authorName;
+    private String recipientName;
     private String text;
-    private byte[] encryptedText;
-    private byte[] messageSignature;
+    private String encryptedText;
+    private byte[] signature;
     private Timestamp timestamp;
+    private byte[] encryptedAesKey;
+
+    public byte[] getEncryptedAesKey() {
+        return encryptedAesKey;
+    }
+
+    public void setEncryptedAesKey(byte[] encryptedAesKey) {
+        this.encryptedAesKey = encryptedAesKey;
+    }
 
     public Message(String authorName, String text, Timestamp timestamp) {
         this.authorName = authorName;
         this.text = text;
         this.timestamp = timestamp;
+    }
+
+    public Message() {
+    }
+
+    public Message(String authorName, Timestamp timestamp) {
+        this.authorName = authorName;
+        this.timestamp = timestamp;
+    }
+
+    public String getRecipientName() {
+        return recipientName;
+    }
+
+    public void setRecipientName(String recipientName) {
+        this.recipientName = recipientName;
     }
 
     public String getAuthorName() {
@@ -32,11 +58,11 @@ public class Message {
         this.text = text;
     }
 
-    public byte[] getEncryptedText() {
+    public String getEncryptedText() {
         return encryptedText;
     }
 
-    public void setEncryptedText(byte[] encryptedText) {
+    public void setEncryptedText(String encryptedText) {
         this.encryptedText = encryptedText;
     }
 
@@ -48,11 +74,11 @@ public class Message {
         this.timestamp = timestamp;
     }
 
-    public byte[] getMessageSignature() {
-        return messageSignature;
+    public byte[] getSignature() {
+        return signature;
     }
 
-    public void setMessageSignature(byte[] messageSignature) {
-        this.messageSignature = messageSignature;
+    public void setSignature(byte[] signature) {
+        this.signature = signature;
     }
 }

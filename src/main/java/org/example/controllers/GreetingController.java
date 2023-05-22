@@ -4,7 +4,6 @@ import org.example.models.Message;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.util.HtmlUtils;
 
 import java.sql.Timestamp;
 
@@ -19,11 +18,6 @@ public class GreetingController {
         return new Message("dasda", "dsasd", new Timestamp(System.currentTimeMillis()));
     }
 
-    @MessageMapping("/app")
-    @SendTo("/")
-    public String kysNiggers() {
-        return "KYS KYSKYSKYSK YSKY KSY KYSKY KSY SYKY SY Y";
-    }
 
 
 }

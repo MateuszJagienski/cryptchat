@@ -1,12 +1,12 @@
 package org.example.view;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.Key;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
-import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.messages.MessageList;
 import com.vaadin.flow.component.orderedlayout.FlexLayout;
@@ -14,13 +14,12 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.*;
-import com.vaadin.flow.server.VaadinSession;
-import jakarta.annotation.PostConstruct;
 import org.example.models.Message;
 import org.example.models.User;
 import org.example.security.AesCipher;
 import org.example.security.DiffieHellman;
 import org.example.security.KeysGenerator;
+import org.example.security.RsaAuth;
 import org.example.utils.HashGenerator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.UnicastProcessor;
@@ -31,15 +30,11 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
+import java.security.*;
 import java.security.spec.InvalidKeySpecException;
 import java.sql.Timestamp;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 
 @Route("chatroom")
 @PreserveOnRefresh
@@ -50,12 +45,15 @@ public class ChatRoomView extends VerticalLayout implements BeforeEnterObserver,
     private static final HashMap<Integer, User> users = new HashMap<>();;
     private String username;
     private final Div chatBox;
-    private final TextField inputField;
     private String chatId;
     private static int loggedUsers = 0;
     private static int bob = -1;
     private static int alice = -1;
     private int me = -1;
+    private User user;
+    private HashMap<Integer, PublicKey> publicRsaKeys = new HashMap<>();
+    private HashMap<Integer, PublicKey> publicDhKeys = new HashMap<>();
+
     public ChatRoomView(UnicastProcessor<Message> publisher, Flux<Message> messages) throws NoSuchAlgorithmException, InvalidKeyException, InvalidKeySpecException {
         boolean f = false;
         if (bob == -1) {
@@ -75,7 +73,7 @@ public class ChatRoomView extends VerticalLayout implements BeforeEnterObserver,
         // Initialize chat box
         chatBox = new Div();
         // Initialize input field
-        inputField = new TextField();
+        TextField inputField = new TextField();
         inputField.setPlaceholder("Type your message here");
        // RouterLink link = new RouterLink("Home", MainView.class);
         Anchor anchor = new Anchor("/", "Home");
@@ -111,26 +109,6 @@ public class ChatRoomView extends VerticalLayout implements BeforeEnterObserver,
 
     }
 
-    private void askUsername() {
-        HorizontalLayout layout = new HorizontalLayout();
-        TextField usernameField = new TextField();
-        Button startButton = new Button("Start chat");
-
-        layout.add(usernameField, startButton);
-
-        startButton.addClickListener(click -> {
-            username = usernameField.getValue();
-            remove(layout);
-            try {
-                showChat();
-            } catch (NoSuchAlgorithmException | InvalidKeyException e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        add(layout);
-    }
-
     private void showChat() throws NoSuchAlgorithmException, InvalidKeyException {
         MessageList messageList = new MessageList();
 
@@ -141,27 +119,43 @@ public class ChatRoomView extends VerticalLayout implements BeforeEnterObserver,
             getUI().ifPresent(
                     ui -> ui.access(() -> {
                         String decText = message.getText();
-                        if (me == bob || me == alice) {
+                        if ((me == bob || me == alice) && (bob + alice) > 0 && me != -1) {
+                            int remote = me == bob ? alice : bob;
+                            checkSharedSecret();
+                            if (users.get(me).getSecretAesKey() == null) {
+                                try {
+                                    var aesKey = HashGenerator.hashMessageSHA(users.get(me).getSharedSecret(), "SHA-256", 16);
+                                    users.get(me).setSecretAesKey(new SecretKeySpec(aesKey, "AES"));
+                                } catch (NoSuchAlgorithmException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                            decText = decryptMessage(message);
                             try {
-                                decText = AesCipher.decrypt(message.getText(), users.get(me).getSecretAesKey());
-                            } catch (InvalidAlgorithmParameterException | InvalidKeyException |
-                                     IllegalBlockSizeException | BadPaddingException | NoSuchAlgorithmException |
-                                     NoSuchPaddingException | IOException e) {
+                                var hashedMessage = HashGenerator.hashMessageSHA(decText.getBytes(), "SHA-256", 16);
+                                var hash = RsaAuth.verifyWithPublicKey(message.getSignature(), users.get(remote).getKeyPairRsa().getPublic());
+                                if (hashedMessage == hash) {
+                                    System.out.println("Message is verified");
+                                } else {
+                                    System.out.println("Message is not verified");
+                                }
+                            } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException |
+                                     IllegalBlockSizeException | BadPaddingException e) {
+                                throw new RuntimeException(e);
+                            } catch (SignatureException e) {
+                                throw new RuntimeException(e);
+                            } catch (NoSuchProviderException e) {
                                 throw new RuntimeException(e);
                             }
                         }
                         //chatBox.add(new Paragraph(message.getAuthorName() + ": " + decText + "\t\t\t " + message.getTimestamp()));
                         FlexLayout messageLayout = new FlexLayout();
-                        messageLayout.getStyle().set("display", "flex");
-                        messageLayout.getStyle().set("flex-direction", "column");
-                        messageLayout.getStyle().set("align-items", "flex-end");
 
                         Span messageText = new Span(message.getAuthorName() + ": " + decText);
-                        messageText.getStyle().set("flex-grow", "1");
+
                         messageLayout.add(messageText);
 
                         Span timestamp = new Span(String.valueOf(message.getTimestamp()));
-                        timestamp.getStyle().set("align-self", "flex-end");
                         messageLayout.add(timestamp);
 
                         chatBox.add(messageLayout);
@@ -182,52 +176,110 @@ public class ChatRoomView extends VerticalLayout implements BeforeEnterObserver,
         layout.expand(messageField);
 
         sendButton.addClickListener(click -> {
-            String mess = messageField.getValue();
-            if (me == bob || me == alice) {
-                try {
-                    mess = AesCipher.encrypt(mess, users.get(me).getSecretAesKey());
-                } catch (NoSuchAlgorithmException | InvalidKeyException | IllegalBlockSizeException |
-                         BadPaddingException | UnsupportedEncodingException | InvalidAlgorithmParameterException |
-                         NoSuchPaddingException e) {
-                    throw new RuntimeException(e);
-                }
+            if (me == -1) {
+                return;
             }
-            publisher.onNext(new Message(username, mess, new Timestamp(System.currentTimeMillis())));
+            String mess = messageField.getValue();
+            Message message = new Message(username, mess, new Timestamp(System.currentTimeMillis()));
+            if ((me == bob || me == alice) && (bob + alice) > 0) {
+                checkSharedSecret();
+                if (users.get(me).getSecretAesKey() == null) {
+                    try {
+                        var aesKey = HashGenerator.hashMessageSHA(users.get(me).getSharedSecret(), "SHA-256", 16);
+                        users.get(me).setSecretAesKey(new SecretKeySpec(aesKey, "AES"));
+                    } catch (NoSuchAlgorithmException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                mess = encryptMessage(mess, message);
+                signMessage(mess, message);
+                System.out.println(Arrays.toString(users.get(me).getSecretAesKey().getEncoded()));
+            }
+            publisher.onNext(message); //
             messageField.clear();
             messageField.focus();
         });
+        sendButton.addClickShortcut(Key.ENTER);
         messageField.focus();
         return layout;
+    }
+
+    private void signMessage(String mess, Message message) {
+        try {
+            var hashedMess = HashGenerator.hashMessageSHA(mess, "SHA-256", 16);
+            var signature = RsaAuth.signWithPrivateKey(hashedMess, users.get(me).getKeyPairRsa().getPrivate());
+            message.setSignature(signature);
+        } catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException |
+                 IllegalBlockSizeException | BadPaddingException e) {
+            throw new RuntimeException(e);
+        } catch (SignatureException e) {
+            throw new RuntimeException(e);
+        } catch (NoSuchProviderException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private String encryptMessage(String mess, Message message) {
+        try {
+            mess = AesCipher.encrypt(mess, users.get(me).getSecretAesKey());
+            message.setText(mess);
+        } catch (NoSuchAlgorithmException | InvalidKeyException | IllegalBlockSizeException |
+                 BadPaddingException | UnsupportedEncodingException | InvalidAlgorithmParameterException |
+                 NoSuchPaddingException e) {
+            throw new RuntimeException(e);
+        }
+        return mess;
+    }
+
+    private String decryptMessage(Message message) {
+        String decText;
+        try {
+            decText = AesCipher.decrypt(message.getText(), users.get(me).getSecretAesKey());
+        } catch (InvalidAlgorithmParameterException | InvalidKeyException |
+                 IllegalBlockSizeException | BadPaddingException | NoSuchAlgorithmException |
+                 NoSuchPaddingException | IOException e) {
+            decText = "Failed decrypting message";
+        }
+        return decText;
+    }
+
+    private void checkSharedSecret() {
+        if (users.get(me).getSharedSecret() == null) {
+            try {
+                int remote = me == bob ? alice : bob;
+                performDiffieHellman(remote);
+            } catch (NoSuchAlgorithmException | InvalidKeySpecException | InvalidKeyException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
     }
 
     private void generateKeys() throws NoSuchAlgorithmException, InvalidKeyException {
         if (me == -1) return;
 
         System.out.println("me generate keys: " + me);
-        User user = new User(username, KeysGenerator.generateRsaKeyPair(4096));
-        var dhKeys = KeysGenerator.generateDhKeyPair(2048);
-        user.setKeyPairDh(dhKeys);
+        User user = new User(username, KeysGenerator.generateRsaKeyPair(2048));
+        user.setKeyPairDh(KeysGenerator.generateDhKeyPair(2048));
         DiffieHellman dh = new DiffieHellman(user.getKeyPairDh().getPrivate());
         user.setDiffieHellman(dh);
         users.put(me, user);
     }
 
-    private void performDiffieHellman() throws NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException {
+    private void performDiffieHellman(int remote) throws NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException {
         System.out.println("performing diffie hellman");
         System.out.println(UI.getCurrent().getSession());
         System.out.println("me" + me);
         System.out.println("bob" + bob);
         System.out.println("alice" + alice);
         if (bob == -1 || alice == -1 || me == -1) return;
-        int remote = me == bob ? alice : bob;
+
         var user = users.get(me);
         var remoteUser = users.get(remote);
         user.setSharedSecret(user.getDiffieHellman()
                 .generateSharedSecret(
                         remoteUser.getKeyPairDh()
                         .getPublic().getEncoded(), true));
-
-
     }
 
     @Override
@@ -239,6 +291,26 @@ public class ChatRoomView extends VerticalLayout implements BeforeEnterObserver,
     public void beforeLeave(BeforeLeaveEvent beforeLeaveEvent) {
         loggedUsers--;
         System.out.println("before leave" + loggedUsers);
+    }
+
+    private void askUsername() {
+        HorizontalLayout layout = new HorizontalLayout();
+        TextField usernameField = new TextField();
+        Button startButton = new Button("Start chat");
+
+        layout.add(usernameField, startButton);
+
+        startButton.addClickListener(click -> {
+            username = usernameField.getValue();
+            remove(layout);
+            try {
+                showChat();
+            } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        add(layout);
     }
 
     @Override
