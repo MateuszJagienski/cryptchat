@@ -2,16 +2,16 @@ package org.example.security;
 
 
 import org.example.utils.BytesToStringConverter;
-import org.example.utils.HashGenerator;
 
 import javax.crypto.*;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
-import java.util.Arrays;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Base64;
 
 public class AesCipher {
@@ -21,14 +21,6 @@ public class AesCipher {
     private static final int GCM_TAG_LENGTH = 128;
     private static final String TAG_DATA = "ASD";
 
-
-    // temporary method genearte always the same key
-    public static SecretKeySpec generateSecretKey() throws NoSuchAlgorithmException {
-        byte[] key = HashGenerator.hashMessageSHA("fdsafasdfa", "SHA-256");
-        key = Arrays.copyOf(key, 16);
-        return new SecretKeySpec(key, "AES");
-    }
-    // required 128-bit AES key
     public static String encrypt(String plainText, SecretKey secretKey) throws InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NoSuchAlgorithmException, UnsupportedEncodingException, InvalidAlgorithmParameterException, NoSuchPaddingException {
         byte[] data = plainText.getBytes(StandardCharsets.UTF_8);
 
@@ -39,9 +31,6 @@ public class AesCipher {
         // add tag data
         byte[] aadTagData = TAG_DATA.getBytes(StandardCharsets.UTF_8);
         GCMParameterSpec gcmParameterSpec = new GCMParameterSpec(GCM_TAG_LENGTH, IV);
-
-
-
 
         // initialize cipher
         System.out.println("secretKey: " + BytesToStringConverter.bytesToHex(secretKey.getEncoded()));

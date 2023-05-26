@@ -6,7 +6,6 @@ import java.sql.Timestamp;
 public class Message{
     private String authorName;
     private String recipientName;
-    private String text;
     private String encryptedText;
     private byte[] signature;
     private Timestamp timestamp;
@@ -20,18 +19,16 @@ public class Message{
         this.encryptedAesKey = encryptedAesKey;
     }
 
-    public Message(String authorName, String text, Timestamp timestamp) {
-        this.authorName = authorName;
-        this.text = text;
-        this.timestamp = timestamp;
-    }
-
-    public Message() {
-    }
-
     public Message(String authorName, Timestamp timestamp) {
         this.authorName = authorName;
         this.timestamp = timestamp;
+    }
+
+    public Message(String authorName) {
+        this.authorName = authorName;
+    }
+
+    public Message() {
     }
 
     public String getRecipientName() {
@@ -48,14 +45,6 @@ public class Message{
 
     public void setAuthorName(String authorName) {
         this.authorName = authorName;
-    }
-
-    public String getText() {
-        return text;
-    }
-
-    public void setText(String text) {
-        this.text = text;
     }
 
     public String getEncryptedText() {

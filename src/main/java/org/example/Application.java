@@ -11,9 +11,9 @@ import reactor.core.publisher.UnicastProcessor;
 
 @Push
 @SpringBootApplication
-public class WebSocketsApplication implements AppShellConfigurator {
+public class Application implements AppShellConfigurator {
     public static void main(String[] args) {
-        SpringApplication.run(WebSocketsApplication.class, args);
+        SpringApplication.run(Application.class, args);
     }
 
     @Bean

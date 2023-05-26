@@ -2,22 +2,20 @@ package org.example.view;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Key;
-import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.messages.MessageList;
 import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.router.*;
+import com.vaadin.flow.router.PreserveOnRefresh;
+import com.vaadin.flow.router.Route;
 import org.example.models.Message;
-import org.example.models.User;
 import org.example.security.AesCipher;
-import org.example.security.DiffieHellman;
 import org.example.security.KeysGenerator;
 import org.example.security.RsaAuth;
 import org.example.utils.HashGenerator;
@@ -27,175 +25,132 @@ import reactor.core.publisher.UnicastProcessor;
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.security.*;
-import java.security.spec.InvalidKeySpecException;
 import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Objects;
 
 @Route("chatroom")
 @PreserveOnRefresh
-public class ChatRoomView extends VerticalLayout implements BeforeEnterObserver, HasUrlParameter<String>, BeforeLeaveObserver {
+public class ChatRoomView extends VerticalLayout {
 
     private final UnicastProcessor<Message> publisher;
     private final Flux<Message> messages;
-    private static final HashMap<Integer, User> users = new HashMap<>();;
+    private static final HashMap<String, PublicKey> publicRsaKeys = new HashMap<>();
+    private final HashMap<String, SecretKey> secretAesKeys = new HashMap<>();
+    private KeyPair rsaKeyPair;
     private String username;
     private final Div chatBox;
-    private String chatId;
-    private static int loggedUsers = 0;
-    private static int bob = -1;
-    private static int alice = -1;
-    private int me = -1;
-    private User user;
-    private HashMap<Integer, PublicKey> publicRsaKeys = new HashMap<>();
-    private HashMap<Integer, PublicKey> publicDhKeys = new HashMap<>();
+    private final TextField sendTo;
 
-    public ChatRoomView(UnicastProcessor<Message> publisher, Flux<Message> messages) throws NoSuchAlgorithmException, InvalidKeyException, InvalidKeySpecException {
-        boolean f = false;
-        if (bob == -1) {
-            bob = loggedUsers;
-            me = loggedUsers;
-            f= true;
-        }
-        if (alice == -1 && !f) {
-            alice = loggedUsers;
-            me = loggedUsers;
-        }
-        loggedUsers++;
+    public ChatRoomView(UnicastProcessor<Message> publisher, Flux<Message> messages) {
         this.publisher = publisher;
         this.messages = messages;
         setSizeFull();
         setDefaultHorizontalComponentAlignment(Alignment.CENTER);
-        // Initialize chat box
         chatBox = new Div();
-        // Initialize input field
-        TextField inputField = new TextField();
-        inputField.setPlaceholder("Type your message here");
-       // RouterLink link = new RouterLink("Home", MainView.class);
-        Anchor anchor = new Anchor("/", "Home");
-        // Add components to layout
+        sendTo = new TextField("Send to user");
 
-        add(chatBox, inputField);
-        add(anchor);
         askUsername();
-        System.out.println("constructor me: " + me);
-        System.out.println("constructor bob: " + bob);
-        System.out.println("constructor alice: " + alice);
-        if (me == alice || me == bob) {
-            generateKeys();
-        }
-        if (loggedUsers == 2) {
-        }
-
-
-        if (loggedUsers == 2) {
-            System.out.println("Chcecking if keys are the same");
-            System.out.println("bob: " + bob);
-            System.out.println("alice: " + alice);
-            System.out.println("me: " + me);
-            System.out.println("users size: " + users.size());
-            System.out.println("shared secrets are equal?: " +
-                    Arrays.equals(users.get(bob).getSharedSecret(),
-                    users.get(alice).getSharedSecret()));
-            System.out.println(Arrays.toString(users.get(bob).getSharedSecret()));
-//            var aesKey = HashGenerator.hashMessageSHA(users.get(bob).getSharedSecret(), "SHA-256", 16);
-//            users.get(bob).setSecretAesKey(new SecretKeySpec(aesKey, "AES"));
-//            users.get(alice).setSecretAesKey(new SecretKeySpec(aesKey, "AES"));
-        }
-
+        HorizontalLayout horizontalLayout = new HorizontalLayout();
+        horizontalLayout.add(chatBox, sendTo);
+        add(horizontalLayout);
     }
 
-    private void showChat() throws NoSuchAlgorithmException, InvalidKeyException {
+    private void askUsername() {
+        HorizontalLayout layout = new HorizontalLayout();
+        TextField usernameField = new TextField("Username");
+        Button startButton = new Button("Start chat");
+        startButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+        startButton.addClickShortcut(Key.ENTER);
+        usernameField.setRequired(true);
+        usernameField.addValidationStatusChangeListener(e ->  startButton.setEnabled(!publicRsaKeys.containsKey(usernameField.getValue())));
+        layout.add(usernameField, startButton);
+        add(layout);
+        startButton.addClickListener(click -> {
+            if (usernameField.isEmpty()) return;
+            username = usernameField.getValue();
+            remove(layout);
+            var div = new Div();
+            div.add(username);
+            add(div);
+            try {
+                receiveMessage();
+                rsaKeyPair = KeysGenerator.generateRsaKeyPair(2048);
+                publicRsaKeys.put(username, rsaKeyPair.getPublic());
+            } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private void receiveMessage() throws NoSuchAlgorithmException, InvalidKeyException {
         MessageList messageList = new MessageList();
 
         add(messageList, createInputLayout());
         expand(messageList);
 
         messages.subscribe(message -> {
-            getUI().ifPresent(
-                    ui -> ui.access(() -> {
-                        String decText = message.getText();
-                        if ((me == bob || me == alice) && (bob + alice) > 0 && me != -1) {
-                            int remote = me == bob ? alice : bob;
-                            checkSharedSecret();
-                            if (users.get(me).getSecretAesKey() == null) {
-                                try {
-                                    var aesKey = HashGenerator.hashMessageSHA(users.get(me).getSharedSecret(), "SHA-256", 16);
-                                    users.get(me).setSecretAesKey(new SecretKeySpec(aesKey, "AES"));
-                                } catch (NoSuchAlgorithmException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }
-                            decText = decryptMessage(message);
-                            try {
-                                var hashedMessage = HashGenerator.hashMessageSHA(decText.getBytes(), "SHA-256", 16);
-                                var hash = RsaAuth.verifyWithPublicKey(message.getSignature(), users.get(remote).getKeyPairRsa().getPublic());
-                                if (hashedMessage == hash) {
-                                    System.out.println("Message is verified");
-                                } else {
-                                    System.out.println("Message is not verified");
-                                }
-                            } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException |
-                                     IllegalBlockSizeException | BadPaddingException e) {
-                                throw new RuntimeException(e);
-                            } catch (SignatureException e) {
-                                throw new RuntimeException(e);
-                            } catch (NoSuchProviderException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }
-                        //chatBox.add(new Paragraph(message.getAuthorName() + ": " + decText + "\t\t\t " + message.getTimestamp()));
-                        FlexLayout messageLayout = new FlexLayout();
+            getUI().ifPresent(ui -> ui.access(() -> {
+                if (message.getEncryptedAesKey() != null) {
+                    try {
+                        var aesKey = RsaAuth.verifyWithPrivateKey(message.getEncryptedAesKey(), rsaKeyPair.getPrivate());
+                        if (aesKey.length <= 32)
+                            secretAesKeys.put(message.getAuthorName(), new SecretKeySpec(aesKey, 0, aesKey.length, "AES"));
+                    } catch (Exception ignored) {}
+                    return;
+                }
+                var decryptedMessage = decryptMessage(message);
+                String text = message.getAuthorName() + ": " + decryptedMessage;
+                var isVerified = verifyMessage(message.getSignature(), message.getAuthorName(), decryptedMessage);
+                if (isVerified) text += " (verified)";
 
-                        Span messageText = new Span(message.getAuthorName() + ": " + decText);
+                FlexLayout messageLayout = new FlexLayout();
+                TextArea textArea = new TextArea();
+                textArea.setValue(text);
+                textArea.setMaxLength(500);
+                textArea.setMaxWidth("100%");
+                messageLayout.add(textArea);
 
-                        messageLayout.add(messageText);
-
-                        Span timestamp = new Span(String.valueOf(message.getTimestamp()));
-                        messageLayout.add(timestamp);
-
-                        chatBox.add(messageLayout);
-                    }));
-
+                Span timestamp = new Span(String.valueOf(message.getTimestamp()));
+                messageLayout.add(timestamp);
+                messageLayout.setWidth("100%");
+                messageLayout.setMaxWidth("100%");
+                messageLayout.getStyle().set("border", "5px solid #9E9E9E");
+                messageLayout.setJustifyContentMode(JustifyContentMode.END);
+                messageLayout.setAlignItems(Alignment.CENTER);
+                messageLayout.setFlexDirection(FlexLayout.FlexDirection.COLUMN);
+                messageLayout.getFlexWrap();
+                messageLayout.setAlignSelf(Alignment.END);
+                chatBox.add(messageLayout);
+            }));
         });
     }
 
     private Component createInputLayout() {
         HorizontalLayout layout = new HorizontalLayout();
         layout.setWidth("100%");
-
         TextField messageField = new TextField();
         Button sendButton = new Button("Send");
         sendButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-
         layout.add(messageField, sendButton);
         layout.expand(messageField);
 
         sendButton.addClickListener(click -> {
-            if (me == -1) {
-                return;
-            }
-            String mess = messageField.getValue();
-            Message message = new Message(username, mess, new Timestamp(System.currentTimeMillis()));
-            if ((me == bob || me == alice) && (bob + alice) > 0) {
-                checkSharedSecret();
-                if (users.get(me).getSecretAesKey() == null) {
-                    try {
-                        var aesKey = HashGenerator.hashMessageSHA(users.get(me).getSharedSecret(), "SHA-256", 16);
-                        users.get(me).setSecretAesKey(new SecretKeySpec(aesKey, "AES"));
-                    } catch (NoSuchAlgorithmException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                mess = encryptMessage(mess, message);
-                signMessage(mess, message);
-                System.out.println(Arrays.toString(users.get(me).getSecretAesKey().getEncoded()));
-            }
-            publisher.onNext(message); //
+            String messageToEncrypt = messageField.getValue();
+            String encryptedMessage;
+            byte[] signature;
+            Message message = new Message(username, new Timestamp(System.currentTimeMillis()));
+            try {
+                encryptedMessage = encryptMessage(messageToEncrypt, sendTo.getValue());
+                message.setEncryptedText(encryptedMessage);
+                signature = signMessage(messageToEncrypt);
+                message.setSignature(signature);
+            } catch (Exception ignored) {}
+            publisher.onNext(message);
             messageField.clear();
             messageField.focus();
         });
@@ -204,122 +159,62 @@ public class ChatRoomView extends VerticalLayout implements BeforeEnterObserver,
         return layout;
     }
 
-    private void signMessage(String mess, Message message) {
+    private byte[] signMessage(String message) {
+        byte[] signature = null;
         try {
-            var hashedMess = HashGenerator.hashMessageSHA(mess, "SHA-256", 16);
-            var signature = RsaAuth.signWithPrivateKey(hashedMess, users.get(me).getKeyPairRsa().getPrivate());
-            message.setSignature(signature);
-        } catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException |
-                 IllegalBlockSizeException | BadPaddingException e) {
-            throw new RuntimeException(e);
-        } catch (SignatureException e) {
-            throw new RuntimeException(e);
-        } catch (NoSuchProviderException e) {
-            throw new RuntimeException(e);
+            byte[] firstHash = HashGenerator.hashMessageSHA(message.getBytes(), "SHA-256");
+            byte[] firstSign = RsaAuth.signWithPrivateKey(firstHash, rsaKeyPair.getPrivate());
+            signature = RsaAuth.signWithPublicKey(firstSign, publicRsaKeys.get(sendTo.getValue()));
+        } catch (Exception ignored) {}
+        return signature;
+    }
+
+    private boolean verifyMessage(byte[] signature, String authorName, String receivedMessage) {
+        try {
+            var hashFromMessage = HashGenerator.hashMessageSHA(receivedMessage.getBytes(), "SHA-256");
+            var first = RsaAuth.verifyWithPrivateKey(signature, rsaKeyPair.getPrivate());
+            var second = RsaAuth.verifyWithPublicKey(first, publicRsaKeys.get(authorName));
+            return Arrays.equals(second, hashFromMessage);
+        } catch (Exception e) {
+            return false;
         }
     }
 
-    private String encryptMessage(String mess, Message message) {
-        try {
-            mess = AesCipher.encrypt(mess, users.get(me).getSecretAesKey());
-            message.setText(mess);
-        } catch (NoSuchAlgorithmException | InvalidKeyException | IllegalBlockSizeException |
-                 BadPaddingException | UnsupportedEncodingException | InvalidAlgorithmParameterException |
-                 NoSuchPaddingException e) {
-            throw new RuntimeException(e);
+    private String encryptMessage(String messageToEncrypt, String sendTo) throws NoSuchAlgorithmException {
+        if (!secretAesKeys.containsKey(sendTo)) {
+            try {
+                exchangeKeys(sendTo);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
-        return mess;
+        try {
+            return AesCipher.encrypt(messageToEncrypt, secretAesKeys.get(sendTo));
+        } catch (Exception e) {
+            return "failed to encrypt";
+        }
+
     }
 
     private String decryptMessage(Message message) {
-        String decText;
         try {
-            decText = AesCipher.decrypt(message.getText(), users.get(me).getSecretAesKey());
-        } catch (InvalidAlgorithmParameterException | InvalidKeyException |
-                 IllegalBlockSizeException | BadPaddingException | NoSuchAlgorithmException |
-                 NoSuchPaddingException | IOException e) {
-            decText = "Failed decrypting message";
+            var name = Objects.equals(message.getAuthorName(), username) ? sendTo.getValue() : message.getAuthorName();
+            return AesCipher.decrypt(message.getEncryptedText(), secretAesKeys.get(name));
+        } catch (Exception e) {
+            return message.getEncryptedText();
         }
-        return decText;
     }
 
-    private void checkSharedSecret() {
-        if (users.get(me).getSharedSecret() == null) {
-            try {
-                int remote = me == bob ? alice : bob;
-                performDiffieHellman(remote);
-            } catch (NoSuchAlgorithmException | InvalidKeySpecException | InvalidKeyException e) {
-                throw new RuntimeException(e);
-            }
+    private void exchangeKeys(String sendTo) throws NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException, InvalidKeyException, NoSuchProviderException {
+        // send private aes key encrypted with rsa
+        if (publicRsaKeys.get(sendTo) == null) {
+            return;
         }
-
+        var secretAes = KeysGenerator.generateAesKey(256);
+        var signedSecretAes = RsaAuth.signWithPublicKey(secretAes.getEncoded(), publicRsaKeys.get(sendTo));
+        Message message = new Message(username, new Timestamp(System.currentTimeMillis()));
+        message.setEncryptedAesKey(signedSecretAes);
+        secretAesKeys.put(sendTo, secretAes);
+        publisher.onNext(message);
     }
-
-    private void generateKeys() throws NoSuchAlgorithmException, InvalidKeyException {
-        if (me == -1) return;
-
-        System.out.println("me generate keys: " + me);
-        User user = new User(username, KeysGenerator.generateRsaKeyPair(2048));
-        user.setKeyPairDh(KeysGenerator.generateDhKeyPair(2048));
-        DiffieHellman dh = new DiffieHellman(user.getKeyPairDh().getPrivate());
-        user.setDiffieHellman(dh);
-        users.put(me, user);
-    }
-
-    private void performDiffieHellman(int remote) throws NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException {
-        System.out.println("performing diffie hellman");
-        System.out.println(UI.getCurrent().getSession());
-        System.out.println("me" + me);
-        System.out.println("bob" + bob);
-        System.out.println("alice" + alice);
-        if (bob == -1 || alice == -1 || me == -1) return;
-
-        var user = users.get(me);
-        var remoteUser = users.get(remote);
-        user.setSharedSecret(user.getDiffieHellman()
-                .generateSharedSecret(
-                        remoteUser.getKeyPairDh()
-                        .getPublic().getEncoded(), true));
-    }
-
-    @Override
-    public void beforeEnter(BeforeEnterEvent event) {
-        chatId = event.getRouteParameters().get("chat_id").orElse(null);
-    }
-
-    @Override
-    public void beforeLeave(BeforeLeaveEvent beforeLeaveEvent) {
-        loggedUsers--;
-        System.out.println("before leave" + loggedUsers);
-    }
-
-    private void askUsername() {
-        HorizontalLayout layout = new HorizontalLayout();
-        TextField usernameField = new TextField();
-        Button startButton = new Button("Start chat");
-
-        layout.add(usernameField, startButton);
-
-        startButton.addClickListener(click -> {
-            username = usernameField.getValue();
-            remove(layout);
-            try {
-                showChat();
-            } catch (NoSuchAlgorithmException | InvalidKeyException e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        add(layout);
-    }
-
-    @Override
-    public void setParameter(BeforeEvent beforeEvent, String s) {
-        chatId = s;
-    }
-
-
 }
-
-
-

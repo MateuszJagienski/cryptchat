@@ -2,7 +2,6 @@ package org.example.utils;
 
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Base64;
 
 public final class BytesToStringConverter {

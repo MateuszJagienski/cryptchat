@@ -6,11 +6,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
 public class HashGenerator {
-
-    public HashGenerator() {
-
-    }
-
     public static byte[] hashMessageSHA(String message, String algorithm) throws NoSuchAlgorithmException {
         byte[] output = message.getBytes(StandardCharsets.UTF_8);
         MessageDigest sha = MessageDigest.getInstance(algorithm);

@@ -76,9 +76,4 @@ class AesCipherTest {
         assertNotEquals("innehaslo", dec);
 
     }
-
-    @Test
-    void generateSecretKey() throws NoSuchAlgorithmException {
-        assertEquals(AesCipher.generateSecretKey(), AesCipher.generateSecretKey());
-    }
 }
